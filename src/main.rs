@@ -46,6 +46,9 @@ enum Commands {
         /// Year (e.g., 2024), defaults to current year if not specified
         #[arg(short, long)]
         year: Option<i32>,
+        /// Get entries for the current week (overrides day/month)
+        #[arg(long, conflicts_with = "day")]
+        week: bool,
         /// Override the default journal path
         #[arg(short, long)]
         path: Option<PathBuf>,
@@ -67,8 +70,8 @@ fn main() {
     match cli.command {
         Commands::New { title, note, path } => create_entry(title, note, path, cli.config),
         Commands::Init { path } => init_config(path),
-        Commands::Get { day, month, year, path, format } => {
-            get_entries(day, month, year, path, cli.config, format)
+        Commands::Get { day, month, year, week, path, format } => {
+            get_entries(day, month, year, week, path, cli.config, format)
         }
     }
 }
@@ -224,6 +227,7 @@ fn get_entries(
     day: Option<u32>,
     month: Option<u32>,
     year: Option<i32>,
+    week: bool,
     path: Option<PathBuf>,
     config_path: Option<PathBuf>,
     format: String,
@@ -240,11 +244,21 @@ fn get_entries(
         }
     };
 
-    let entries = match find_entries(&journal_path, day, month, year) {
-        Ok(e) => e,
-        Err(e) => {
-            eprintln!("Error: {}", e);
-            std::process::exit(1);
+    let entries = if week {
+        match find_entries_week(&journal_path) {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
+    } else {
+        match find_entries(&journal_path, day, month, year) {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
         }
     };
 
@@ -443,6 +457,79 @@ fn find_entries(
         }
     }
 
+    // Sort entries by path for consistent ordering
+    entries.sort();
+    Ok(entries)
+}
+
+/// Find journal entries for the current week (Monday to Sunday)
+fn find_entries_week(journal_path: &Path) -> Result<Vec<PathBuf>, String> {
+    let now = chrono::Local::now();
+    let weekday = now.weekday().num_days_from_monday(); // 0 = Monday, 6 = Sunday
+    
+    // Calculate start of week (Monday)
+    let start_of_week = now - chrono::Duration::days(weekday as i64);
+    let start_day = start_of_week.day();
+    let start_month = start_of_week.month();
+    let start_year = start_of_week.year();
+    
+    // Calculate end of week (Sunday)
+    let end_of_week = start_of_week + chrono::Duration::days(6);
+    let end_day = end_of_week.day();
+    let end_month = end_of_week.month();
+    let end_year = end_of_week.year();
+    
+    let mut entries = Vec::new();
+    
+    // Helper function to collect entries from a specific day
+    let mut collect_entries_for_day = |year: i32, month: u32, day: u32| {
+        let month_dir = journal_path.join(year.to_string()).join(format!("{:02}", month));
+        if month_dir.exists() {
+            let day_prefix = format!("{:02}", day);
+            if let Ok(files) = fs::read_dir(&month_dir) {
+                for file in files.flatten() {
+                    if let Some(filename) = file.file_name().to_str() {
+                        if filename.starts_with(&day_prefix) && filename.ends_with(".md") {
+                            entries.push(file.path());
+                        }
+                    }
+                }
+            }
+        }
+    };
+    
+    // Collect entries from start of week to end of week
+    if start_year == end_year && start_month == end_month {
+        // Same month - iterate days
+        for day in start_day..=end_day {
+            collect_entries_for_day(start_year, start_month, day);
+        }
+    } else {
+        // Week spans multiple months
+        // First, collect from start day to end of start month
+        let days_in_start_month = match start_month {
+            1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+            4 | 6 | 9 | 11 => 30,
+            2 => {
+                if (start_year % 4 == 0 && start_year % 100 != 0) || (start_year % 400 == 0) {
+                    29
+                } else {
+                    28
+                }
+            }
+            _ => 30,
+        };
+        
+        for day in start_day..=days_in_start_month {
+            collect_entries_for_day(start_year, start_month, day);
+        }
+        
+        // Then collect from start of end month to end day
+        for day in 1..=end_day {
+            collect_entries_for_day(end_year, end_month, day);
+        }
+    }
+    
     // Sort entries by path for consistent ordering
     entries.sort();
     Ok(entries)
