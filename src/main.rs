@@ -244,6 +244,8 @@ fn get_entries(
         }
     };
 
+    // Debug output
+
     let entries = if week {
         match find_entries_week(&journal_path) {
             Ok(e) => e,
@@ -261,6 +263,10 @@ fn get_entries(
             }
         }
     };
+
+    // Debug output
+    for entry in &entries {
+    }
 
     // Output results
     match format.as_str() {
@@ -392,13 +398,12 @@ fn find_entries(
     let year_dir = journal_path.join(target_year.to_string());
     
     // Determine the search directory based on what was specified
-    let search_dir = if day.is_some() || month.is_some() {
-        // If day or month specified, we need the month directory
-        year_dir.join(format!("{:02}", target_month))
-    } else {
+    let search_dir = if year.is_some() && day.is_none() && month.is_none() {
         // Just year specified - search from year directory
-        // Clone here since we need year_dir later for the year search
         year_dir.clone()
+    } else {
+        // For today's entries (no params) or when day/month specified, use month directory
+        year_dir.join(format!("{:02}", target_month))
     };
 
     // Collect matching entries
