@@ -77,39 +77,66 @@ fn main() {
 }
 
 fn load_config(config_path: Option<PathBuf>) -> Option<Config> {
-    let read_config = |path: &Path| {
-        if path.exists() {
-            let content = fs::read_to_string(path).ok()?;
-            toml::from_str(&content).ok()
-        } else {
-            None
-        }
-    };
-
     // If config path is specified, use that file.
     if let Some(path) = config_path {
-        return read_config(&path);
+        if path.exists() {
+            match fs::read_to_string(&path) {
+                Ok(content) => {
+                    match toml::from_str(&content) {
+                        Ok(config) => return Some(config),
+                        Err(e) => {
+                            eprintln!("Warning: Failed to parse config at {}: {}", path.display(), e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Warning: Failed to read config at {}: {}", path.display(), e);
+                }
+            }
+        }
     }
 
     // If set, FILE_JOURNAL_CONFIG_DIR must point to a directory containing config.toml.
     if let Some(config_dir) = env::var_os("FILE_JOURNAL_CONFIG_DIR") {
-        let config_path = PathBuf::from(config_dir).join("config.toml");
-        if let Some(config) = read_config(&config_path) {
-            return Some(config);
+        let config_file_path = PathBuf::from(config_dir).join("config.toml");
+        if config_file_path.exists() {
+            match fs::read_to_string(&config_file_path) {
+                Ok(content) => {
+                    match toml::from_str(&content) {
+                        Ok(config) => return Some(config),
+                        Err(e) => {
+                            eprintln!("Warning: Failed to parse config at {}: {}", config_file_path.display(), e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Warning: Failed to read config at {}: {}", config_file_path.display(), e);
+                }
+            }
+        } else {
+            eprintln!("Warning: FILE_JOURNAL_CONFIG_DIR is set but {} not found", config_file_path.display());
         }
     }
 
     // Try current directory .file-journal.toml
     let local_config = Path::new(".file-journal.toml");
-    if let Some(config) = read_config(local_config) {
-        return Some(config);
+    if local_config.exists() {
+        if let Ok(content) = fs::read_to_string(local_config) {
+            if let Ok(config) = toml::from_str(&content) {
+                return Some(config);
+            }
+        }
     }
 
     // Try home directory ~/.config/file-journal/config.toml
     if let Some(home) = dirs::home_dir() {
         let home_config = home.join(".config").join("file-journal").join("config.toml");
-        if let Some(config) = read_config(&home_config) {
-            return Some(config);
+        if home_config.exists() {
+            if let Ok(content) = fs::read_to_string(&home_config) {
+                if let Ok(config) = toml::from_str(&content) {
+                    return Some(config);
+                }
+            }
         }
     }
 
@@ -255,8 +282,6 @@ fn get_entries(
         }
     };
 
-    // Debug output
-
     let entries = if week {
         match find_entries_week(&journal_path) {
             Ok(e) => e,
@@ -274,10 +299,6 @@ fn get_entries(
             }
         }
     };
-
-    // Debug output
-    for entry in &entries {
-    }
 
     // Output results
     match format.as_str() {
