@@ -33,6 +33,12 @@ Or initialize interactively:
 file-journal init
 ```
 
+Config lookup order when creating/getting entries:
+1. `-c, --config` (path to a config file)
+2. `FILE_JOURNAL_CONFIG_DIR` (directory containing `config.toml`)
+3. `./.file-journal.toml`
+4. `~/.config/file-journal/config.toml`
+
 ## Installation
 
 ### From source (requires Rust):

@@ -77,28 +77,39 @@ fn main() {
 }
 
 fn load_config(config_path: Option<PathBuf>) -> Option<Config> {
-    // If config path is specified, use that
-    if let Some(path) = config_path {
+    let read_config = |path: &Path| {
         if path.exists() {
-            let content = fs::read_to_string(&path).ok()?;
-            return toml::from_str(&content).ok();
+            let content = fs::read_to_string(path).ok()?;
+            toml::from_str(&content).ok()
+        } else {
+            None
         }
-        return None;
+    };
+
+    // If config path is specified, use that file.
+    if let Some(path) = config_path {
+        return read_config(&path);
+    }
+
+    // If set, FILE_JOURNAL_CONFIG_DIR must point to a directory containing config.toml.
+    if let Some(config_dir) = env::var_os("FILE_JOURNAL_CONFIG_DIR") {
+        let config_path = PathBuf::from(config_dir).join("config.toml");
+        if let Some(config) = read_config(&config_path) {
+            return Some(config);
+        }
     }
 
     // Try current directory .file-journal.toml
     let local_config = Path::new(".file-journal.toml");
-    if local_config.exists() {
-        let content = fs::read_to_string(local_config).ok()?;
-        return toml::from_str(&content).ok();
+    if let Some(config) = read_config(local_config) {
+        return Some(config);
     }
 
     // Try home directory ~/.config/file-journal/config.toml
     if let Some(home) = dirs::home_dir() {
         let home_config = home.join(".config").join("file-journal").join("config.toml");
-        if home_config.exists() {
-            let content = fs::read_to_string(&home_config).ok()?;
-            return toml::from_str(&content).ok();
+        if let Some(config) = read_config(&home_config) {
+            return Some(config);
         }
     }
 
